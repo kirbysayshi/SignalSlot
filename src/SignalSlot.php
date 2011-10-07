@@ -17,21 +17,23 @@ class SignalSlot implements ISignalSlot {
 
 	private $debug = false;
 
+	private $reflector = null;
+
 	public function __construct() {
 		$this->setup();
 	}
 
 	private function setup(){
-		$ref = new ReflectionClass($this);
-		$consts = $ref->getConstants();
+		$this->reflector = new ReflectionClass($this);
+		$consts = $this->reflector->getConstants();
 
 		foreach ($consts as $key => $val)
 		{
-			if (substr($key, 0, 7) === 'SIGNAL_' && $ref->hasMethod($val)) {
+			if (substr($key, 0, 7) === 'SIGNAL_' && $this->reflector->hasMethod($val)) {
 
 				$this->signals[$val] = array();
 
-			} else if(substr($key, 0, 5) === 'SLOT_' && $ref->hasMethod($val)){
+			} else if(substr($key, 0, 5) === 'SLOT_' && $this->reflector->hasMethod($val)){
 
 				$this->slots[$val] = array();
 			}
@@ -49,21 +51,18 @@ class SignalSlot implements ISignalSlot {
 			$orig = $args;
 			array_unshift( $args, $name );
 
-			$ref = new ReflectionClass($this);
 			$return;
 
 			// pass call to actual method
-			$pass = $ref->getMethod($name);
+			$pass = $this->reflector->getMethod($name);
 			if($pass->isPrivate() || $pass->isProtected()) {
 				$pass->setAccessible(true);
-				$return = $pass->invokeArgs($this, $orig);
-				//$pass->setAccessible(false);
-			} else {
-				$return = $pass->invokeArgs($this, $orig);
-			}
+			} 
+			
+			$return = $pass->invokeArgs($this, $orig);
 
 			// notify listening slots
-			$emit = $ref->getMethod('emit');
+			$emit = $this->reflector->getMethod('emit');
 			$emit->invokeArgs($this, $args);
 
 			return $return;
@@ -73,16 +72,12 @@ class SignalSlot implements ISignalSlot {
 		// this bypasses visibility, since slots need to be externally callable
 		if( isset($this->slots[$name]) ){
 
-			$ref = new ReflectionClass($this);
-			$meth = $ref->getMethod($name);
+			$meth = $this->reflector->getMethod($name);
 
 			if($meth->isPrivate() || $meth->isProtected()) {
 				$meth->setAccessible(true);
-				$return = $meth->invokeArgs($this, $args);
-				$meth->setAccessible(false);
-			} else {
-				$return = $meth->invokeArgs($this, $args);
 			}
+			$return = $meth->invokeArgs($this, $args);
 
 			return $return;
 		}
@@ -103,7 +98,8 @@ class SignalSlot implements ISignalSlot {
 		$this->signals[$signal][] = array(
 			'context' => $context,
 			'slot'    => $slot,
-			'config'  => $config);
+			'config'  => $config,
+			'reflector' => $ctx_ref);
 		
 		$this->debug && var_dump("count for signal $signal: ".count( $this->signals[$signal] ) );
 	}
@@ -118,6 +114,7 @@ class SignalSlot implements ISignalSlot {
 		
 		foreach ($this->signals[$signal] as $id => $receiver){
 			unset($receiver['config']);
+			unset($receiver['reflector']);
 			
 			if ($receiver === $def){
 				unset($this->signals[$signal][$id]);
@@ -139,20 +136,18 @@ class SignalSlot implements ISignalSlot {
 			$context = $receiver['context'];
 			$method  = $receiver['slot'];
 			$config  = $receiver['config'];
+			$ctx_ref = $receiver['reflector'];
 			
 			if (is_string($context)){
 				$context = !empty($config) ? new $context($config) : new $context();
 			}
 
-			$ref = new ReflectionClass($context);
-			$meth = $ref->getMethod($method);
+			$meth = $ctx_ref->getMethod($method);
 			if($meth->isPrivate() || $meth->isProtected()) {
-				$meth->setAccessible(true);
-				$return = $meth->invokeArgs($context, $args);
-				$meth->setAccessible(false);
-			} else {
-				$return = $meth->invokeArgs($context, $args);
-			}
+				$meth->setAccessible(true);	
+			} 
+			
+			$return = $meth->invokeArgs($context, $args);
 		}
 
 		return $return;
