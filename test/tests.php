@@ -11,10 +11,16 @@ define('DEBUG', true);
 
 class Person extends SignalSlot {
 	
+	// defining a const with a prefix of SIGNAL_ or SLOT_ tells SignalSlot to
+	// mark and manage the matching methods.
 	const SIGNAL_READY = 'ready';
 	const SIGNAL_DEATH = 'death';
+
+	// attempting to connect this signal will throw an exception, since there is 
+	// no matching signal method
 	const SIGNAL_LEVEL_UP = 'level_up';
 
+	// signals must be either private or protected, to ensure that __call is triggered
 	private function ready($msg = false, $when = false){
 		if( $msg === false && $when === false ) throw new Exception('missing args');
 		return 20;
@@ -26,14 +32,16 @@ class Person extends SignalSlot {
 class Car extends SignalSlot {
 	
 	const SIGNAL_STARTUP = 'startup';
-	const SIGNAL_IDLE = 'idle';
 
+	// if a signal tries to connect to SLOT_MISSING, an exception will be thrown
+	// because there is no matching method
 	const SLOT_MISSING = 'missing';
 	const SLOT_OPEN_DOOR = 'open_door';
 
 	public $is_door_open = false;
 	public $open_count = 0;
 
+	// slots can be public, private, or protected
 	private function open_door($arr, $bool){
 		if( count(func_get_args()) < 2 ) throw new Exception('missing args');
 		$this->is_door_open = true;
@@ -56,6 +64,10 @@ class Tire {
 
 }
 
+// POPO: Plain Old PHP Object, one that does not extend SignalSlot
+// Slots and signals must be externally visible, so can be protected
+// in certain situations but most likely will need to be public.
+
 class Windshield {
 	
 	const SLOT_BLOWUP = 'blowup';
@@ -75,6 +87,8 @@ class Rock {
 
 	public function thrown(){
 		$this->thrown_count++;
+
+		// POPOs must manually emit
 		SS::emit($this, self::SIGNAL_THROWN);
 	}
 
@@ -157,7 +171,7 @@ $A_TESTS['SignalSlot with POPO'] = function(){
 	assert_equal($t->times_blown, 2);
 };
 
-$A_TESTS['SS connect'] = function(){
+$A_TESTS['SS::connect'] = function(){
 	
 	$w = new Windshield;
 	$r = new Rock;
@@ -185,7 +199,7 @@ $A_TESTS['SS connect'] = function(){
 };
 
 
-$A_TESTS['SS disconnect'] = function(){
+$A_TESTS['SS::disconnect'] = function(){
 	
 	$w = new Windshield;
 	$r = new Rock;
