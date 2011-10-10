@@ -62,7 +62,7 @@ Option 1 and 2 both have drawbacks. Option 1 is assumedly using `call_user_func`
 
 Obviously, this works, and is relatively simple. But, here's how you would do it with SignalSlot.php:
 
-	class Foursquare_Client extends SignalSlot {
+	class Foursquare_Client extends KirbySaysHi\SignalSlot {
 		
 		const SIGNAL_USER_DATA = 'user_data';
 
@@ -73,7 +73,7 @@ Obviously, this works, and is relatively simple. But, here's how you would do it
 		}
 	}
 
-	class User {
+	class User extends KirbySaysHi\SignalSlot {
 		
 		const SLOT_INIT_FROM_ARRAY = 'init_from_array';
 
@@ -83,7 +83,7 @@ Obviously, this works, and is relatively simple. But, here's how you would do it
 
 	}
 
-	class MyApp extends SignalSlot {
+	class MyApp extends KirbySaysHi\SignalSlot {
 		
 		const SLOT_LOG = 'log';
 		const SLOT_ON_USER_DATA = 'on_user_data';
@@ -119,7 +119,7 @@ Obviously, this works, and is relatively simple. But, here's how you would do it
 		}
 	}
 
-It's basically the same length. However, there are a few benefits here. The most important is that our events are now dependent on constants, which throw a fatal error if not defined. In addition, at "connect" time (whenever connect is called), the existence of both the slot and signal are checked, which further helps prevent silly errors (missing either throws an exception). We can also very easily hook up multiple slots to a single signal, and easily manage disconnecting slots from signals. Furthermore, a slot is just a method, so it can be called like any other for even more versatility. The slots and signals are also all defined up front, so developers need only look at the class definition to know what they can connect to.
+It's basically the same length. However, there are a few benefits here. The most important is that our events are now dependent on constants, which throw a fatal error if not defined. In addition, at "connect" time (whenever connect is called), the existence of both the slot and signal are checked, which further helps prevent silly errors (missing either throws an exception). We can also very easily hook up multiple slots to a single signal, and easily manage disconnecting slots from signals. Furthermore, a slot is just a method, so it can be called like any other for even more versatility. The slots and signals are also all defined up front, so developers need only look at the class definition to know what they can connect to. Technically only classes that have signals need to extend SignalSlot.
 
 Signals can only be fired from within their defined class or a child class, so this further helps to promote decoupling.
 
