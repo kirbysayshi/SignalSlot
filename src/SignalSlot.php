@@ -1,98 +1,82 @@
 <?php
+namespace KirbySaysHi;
 
-// modified from: http://www.osebboy.com/blog/signals-and-slots-for-php/
+// inspired by and modified from: http://www.osebboy.com/blog/signals-and-slots-for-php/
 
 interface ISignalSlot
 {
 	public function __construct();
 	public function connect($signal, $context, $slot, $config = array());
 	public function disconnect($signal, $context, $slot);
-	public function emit($signal, $args = null);
+	//public function emit($signal, $args = null);
 }
 
+class MemberAccessException extends \Exception {}
+class UndeclaredSignalException extends \Exception {}
+class UndeclaredSlotException extends \Exception {}
+
 class SignalSlot implements ISignalSlot {
-
-	protected $signals = array();
-	protected $slots = array();
-
+	
+	private $signals = array();
+	private $slots = array();
 	private $debug = false;
-
 	private $reflector = null;
+
+	public function __call($name, $args){
+
+		// see if this method call is a valid SIGNAL
+		if( isset($this->signals[$name]) ){
+
+			// get immediate caller
+			list(,, $caller) = debug_backtrace(false);
+			
+			// a signal cannot be called from outside
+			if( isset($caller['class']) && is_subclass_of($caller['class'], __CLASS__) ){
+
+				$this->debug && print 'emitting SIGNAL_'.$name." with args: ". implode(',', $args) ." \n";
+				$this->debug && var_dump($caller);
+
+				// notify listening slots
+				// do not return, signals have no return type
+				array_unshift( $args, $name );
+				$emit = $this->reflector->getMethod('emit');
+				$emit->setAccessible(true);
+				$emit->invokeArgs($this, $args);
+				$emit->setAccessible(false);
+
+			} else {
+				throw new MemberAccessException(
+					'Signal "' . $name . '" is inaccessible from caller: ' 
+					. (isset($caller['class']) ? $caller['class'] : '')
+					. (isset($caller['function']) ? $caller['function'] : '' )
+				);
+			}
+		} else {
+			throw new MemberAccessException('Method "'.$name.'" is either inaccessible or does not exist');
+		}
+	}
 
 	public function __construct() {
 		$this->setup();
 	}
 
-	private function setup(){
-		$this->reflector = new ReflectionClass($this);
-		$consts = $this->reflector->getConstants();
-
-		foreach ($consts as $key => $val)
-		{
-			if (substr($key, 0, 7) === 'SIGNAL_' && $this->reflector->hasMethod($val)) {
-
-				$this->signals[$val] = array();
-
-			} else if(substr($key, 0, 5) === 'SLOT_' && $this->reflector->hasMethod($val)){
-
-				$this->slots[$val] = array();
-			}
-		}
-	}
-
-	public function __call($name, $args){
-		
-		// see if this method call is a valid SIGNAL
-		if( isset($this->signals[$name]) ){
-
-			$this->debug && print 'Auto emitted SIGNAL_'.$name." with args: ". implode(',', $args) ." \n";
-			
-			// save original args for passthru call
-			$orig = $args;
-			array_unshift( $args, $name );
-
-			$return;
-
-			// pass call to actual method
-			$pass = $this->reflector->getMethod($name);
-			if($pass->isPrivate() || $pass->isProtected()) {
-				$pass->setAccessible(true);
-			} 
-			
-			$return = $pass->invokeArgs($this, $orig);
-
-			// notify listening slots
-			$emit = $this->reflector->getMethod('emit');
-			$emit->invokeArgs($this, $args);
-
-			return $return;
-		}
-
-		// see if method call request is valid slot
-		// this bypasses visibility, since slots need to be externally callable
-		if( isset($this->slots[$name]) ){
-
-			$meth = $this->reflector->getMethod($name);
-
-			if($meth->isPrivate() || $meth->isProtected()) {
-				$meth->setAccessible(true);
-			}
-			$return = $meth->invokeArgs($this, $args);
-
-			return $return;
-		}
-	}
-
 	public function connect($signal, $context, $slot, $config = array()){
 
 		if (!isset($this->signals[$signal])) {
-			throw new Exception ("'$signal' signal is not declared in " . get_class($this));
+			throw new UndeclaredSignalException (
+				"Signal \"$signal\" const is not declared in " . get_class($this)
+			);
 		}
 		
-		$ctx_ref = new ReflectionClass($context);
+		$ctx_ref = new \ReflectionClass($context);
 
 		if(!$ctx_ref->hasMethod($slot)){
-			throw new Exception( $slot . ' is not defined in '. (is_string($context) ? $context : get_class($context)) );
+			throw new UndeclaredSlotException( 
+				'Slot '
+				. '"'.$slot.'"'
+				. ' is not defined in '
+				. (is_string($context) ? $context : get_class($context))
+			);
 		}
 
 		$this->signals[$signal][] = array(
@@ -104,6 +88,7 @@ class SignalSlot implements ISignalSlot {
 		$this->debug && var_dump("count for signal $signal: ".count( $this->signals[$signal] ) );
 	}
 
+	// disconnects all matching signal-slot connections
 	public function disconnect($signal, $context, $slot){
 
 		if (!isset($this->signals[$signal]) || empty($this->signals[$signal])) {
@@ -118,15 +103,13 @@ class SignalSlot implements ISignalSlot {
 			
 			if ($receiver === $def){
 				unset($this->signals[$signal][$id]);
-				return true;
 			}
 		}
 		return false;
 	}
 
-	public function emit($signal, $args = null){
+	private function emit($signal, $args = null){
 
-		$return = null;
 		$args = array_slice(func_get_args(), 1);
 		
 		foreach ($this->signals[$signal] as $receiver){
@@ -142,15 +125,34 @@ class SignalSlot implements ISignalSlot {
 				$context = !empty($config) ? new $context($config) : new $context();
 			}
 
+			// slots called normally obey access level rules
+			// when called as a slot, however, even private methods can be called
 			$meth = $ctx_ref->getMethod($method);
-			if($meth->isPrivate() || $meth->isProtected()) {
+			if($meth->isPrivate() || $meth->isProtected() || $meth->isVirtual()) {
 				$meth->setAccessible(true);	
 			} 
 			
-			$return = $meth->invokeArgs($context, $args);
+			$meth->invokeArgs($context, $args);
 		}
+	}
 
-		return $return;
+	private function setup(){
+		$this->reflector = new \ReflectionClass($this);
+		$consts = $this->reflector->getConstants();
+
+		foreach ($consts as $key => $val)
+		{
+			if (substr($key, 0, 7) === 'SIGNAL_') {
+				if($this->reflector->hasMethod($val)){
+					throw new Exception('Spurious method declaration "'.$val.'" in '.get_class($this));
+				}
+				$this->signals[$val] = array();
+
+			} else if(substr($key, 0, 5) === 'SLOT_' && $this->reflector->hasMethod($val)){
+
+				$this->slots[$val] = array();
+			}
+		}
 	}
 }
 
@@ -165,15 +167,22 @@ class SS {
 
 	static public function connect($signal_context, $signal, $slot_context, $slot){
 		
-		$signal_ref = new ReflectionClass($signal_context);
-		$slot_ref = new ReflectionClass($slot_context);
+		$signal_ref = new \ReflectionClass($signal_context);
+		$slot_ref = new \ReflectionClass($slot_context);
 
 		if(!$slot_ref->hasMethod($slot)){
-			throw new Exception( $slot . ' is not defined in '.$slot_context );
+			throw new UndeclaredSlotException( 
+				'Slot '
+				. '"'.$slot.'"'
+				. ' is not defined in '
+				. get_class($slot_context)
+			);
 		}
 		
 		if(!$signal_ref->hasMethod($signal)){
-			throw new Exception( $signal . ' is not defined in '.$signal_context );
+			throw new UndeclaredSignalException (
+				"Signal \"$signal\" is not declared in " . get_class($signal_context)
+			);
 		}
 		
 		$signal_key = self::hash($signal_context, $signal);

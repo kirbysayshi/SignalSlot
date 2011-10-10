@@ -2,30 +2,28 @@
 
 // external dependencies...
 require_once('../src/SignalSlot.php');
+use KirbySaysHi\SignalSlot as SignalSlot;
+use KirbySaysHi\SS as SS;
 
 // define master test array
 $A_TESTS = array();
-define('DEBUG', true);
+define('DEBUG', false);
 
 // classes to help test
 
 class Person extends SignalSlot {
 	
-	// defining a const with a prefix of SIGNAL_ or SLOT_ tells SignalSlot to
-	// mark and manage the matching methods.
+	// defining a const with a prefix of SIGNAL_ or SLOT_ sets up SignalSlot
 	const SIGNAL_READY = 'ready';
 	const SIGNAL_DEATH = 'death';
 
-	// attempting to connect this signal will throw an exception, since there is 
-	// no matching signal method
-	const SIGNAL_LEVEL_UP = 'level_up';
-
-	// signals must be either private or protected, to ensure that __call is triggered
-	private function ready($msg = false, $when = false){
-		if( $msg === false && $when === false ) throw new Exception('missing args');
-		return 20;
+	public function fire_internal_signal(){
+		$this->ready('I am ready from within', time());
 	}
 
+	public function fire_death(){
+		$this->death('I am dead inside', time());
+	}
 }
 
 
@@ -34,21 +32,33 @@ class Car extends SignalSlot {
 	const SIGNAL_STARTUP = 'startup';
 
 	// if a signal tries to connect to SLOT_MISSING, an exception will be thrown
-	// because there is no matching method
+	// because there is no matching receiver method
 	const SLOT_MISSING = 'missing';
 	const SLOT_OPEN_DOOR = 'open_door';
+	const SLOT_WITH_PARAMS = 'with_params';
 
 	public $is_door_open = false;
 	public $open_count = 0;
 
+	public $death_msg = '';
+	public $time_of_death = 0;
+
 	// slots can be public, private, or protected
-	private function open_door($arr, $bool){
-		if( count(func_get_args()) < 2 ) throw new Exception('missing args');
+	private function open_door(){
+		
 		$this->is_door_open = true;
 		$this->open_count++;
 	}
 
-	private function startup(){
+	private function with_params($msg, $time){
+		if( count(func_get_args()) < 2 ) throw new Exception('missing args');
+
+		$this->death_msg = $msg;
+		$this->time_of_death = $time;
+	}
+
+	public function turn_key(){
+		$this->startup();
 	}
 }
 
@@ -105,34 +115,62 @@ $A_TESTS['SignalSlot->connect'] = function(){
 		$p->connect(Person::SIGNAL_READY, $c, Car::SLOT_MISSING);	
 	});
 	
-	// undefined signal
-	assert_throws(function() use ($p, $c){
-		$p->connect(Person::SIGNAL_LEVEL_UP, $c, Car::SLOT_OPEN_DOOR);	
+	assert_not_throws(function() use ($p, $c){
+		$p->connect(Person::SIGNAL_READY, $c, Car::SLOT_OPEN_DOOR);	
 	});
 
-	// passes args through
-	assert_not_throws( function() use ($p) { 
-		$p->ready("Let's go!", time()); 
+	// multiple slots listening to same signal
+	assert_not_throws(function() use ($p, $c){
+		$p->connect(Person::SIGNAL_READY, $c, Car::SLOT_WITH_PARAMS);
 	});
 
-	// __call overload returns method value
-	assert_equal( $p->ready("Let's go!", time()), 20 );
+	// undefined signal automatically throws fatal error
+	//assert_throws(function() use ($p, $c){
+	//	$p->connect(Person::SIGNAL_LEVEL_UP, $c, Car::SLOT_OPEN_DOOR);	
+	//});
+	
+};
+
+$A_TESTS['SignalSlot->emit'] = function(){
+
+	$p = new Person();
+	$c = new Car();
 
 	$p->connect(Person::SIGNAL_READY, $c, Car::SLOT_OPEN_DOOR);
+	$p->connect(Person::SIGNAL_DEATH, $c, Car::SLOT_WITH_PARAMS);
 
 	// slot is fired
 	assert_not_throws( function() use ($p, $c){
-		$p->ready("Let's go!", time());
+		$p->fire_internal_signal(); 
 	});
 
 	assert_equal( $c->is_door_open, true );
 	assert_equal( $c->open_count, 1 );
 
+	assert_not_throws( function() use ($p, $c){
+		$p->fire_death(); 
+	});
+
+	// check that params are passed through properly
+	assert_equal( $c->death_msg, 'I am dead inside' );
+
 	// double slot
 	$p->connect(Person::SIGNAL_READY, $c, Car::SLOT_OPEN_DOOR);
-	$p->ready("Let's go!", time());
+	$p->fire_internal_signal(); 
 	assert_equal( $c->open_count, 3 );
-	
+
+	// make sure __call isn't letting privates out
+	assert_throws(function() use ($p){
+		$p->emit();
+	});
+
+	// signals are inaccessible if called outside of their defined class or children
+	assert_throws(function() use ($p){
+		$p->ready();
+	});
+
+	//echo "\n....\n";
+	//$p->ready();
 };
 
 $A_TESTS['SignalSlot->disconnect'] = function(){
@@ -141,19 +179,21 @@ $A_TESTS['SignalSlot->disconnect'] = function(){
 	$c = new Car();
 
 	$p->connect(Person::SIGNAL_READY, $c, Car::SLOT_OPEN_DOOR);
-	$p->ready("Let's go!", time());
+	$p->fire_internal_signal(); 
 	assert_equal( $c->open_count, 1 );
 
 	$p->disconnect(Person::SIGNAL_READY, $c, Car::SLOT_OPEN_DOOR);
-	$p->ready("Let's go!", time());
+	$p->fire_internal_signal(); 
 	assert_equal( $c->open_count, 1 );	// should be unaffected by call
 
 	$p->connect(Person::SIGNAL_READY, $c, Car::SLOT_OPEN_DOOR);
 	$p->connect(Person::SIGNAL_READY, $c, Car::SLOT_OPEN_DOOR);
+
+	// one disconnect call should kill all of same object, slot, signal
 	$p->disconnect(Person::SIGNAL_READY, $c, Car::SLOT_OPEN_DOOR);
 
-	$p->ready("Let's go!", time());
-	assert_equal( $c->open_count, 2 );
+	$p->fire_internal_signal(); 
+	assert_equal( $c->open_count, 1 );
 
 };
 
@@ -165,8 +205,8 @@ $A_TESTS['SignalSlot with POPO'] = function(){
 	$t = new Tire();
 
 	$c->connect(Car::SIGNAL_STARTUP, $t, Tire::SLOT_BLOW);
-	$c->startup();
-	$c->startup();
+	$c->turn_key();
+	$c->turn_key();
 
 	assert_equal($t->times_blown, 2);
 };
