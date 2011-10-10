@@ -47,8 +47,16 @@ class Aristotle {
 		echo "\t".$msg."\n";
 	}
 
+	public static function getInstance(){
+		if(is_null(self::$instance)){
+			self::$instance = new Aristotle();
+		}
+
+		return self::$instance;
+	}
+
 	// adapted from : http://us2.php.net/manual/en/function.debug-backtrace.php#99752
-	private function where_called( $level = 1 ) {
+	public function where_called( $level = 1 ) {
 		$trace  = debug_backtrace();
 
 		$file = $trace[$level]['file'];
@@ -58,14 +66,6 @@ class Aristotle {
 		//if (is_object($object)) { $object = get_class($object); }
 
 		return "line $line of function $func \n\t(in $file)";
-	}
-
-	public static function getInstance(){
-		if(is_null(self::$instance)){
-			self::$instance = new Aristotle();
-		}
-
-		return self::$instance;
 	}
 
 	public function run(){
@@ -151,7 +151,7 @@ function assert_throws( $func ){
 	if($threw === true){
 		return true;
 	} else {
-		return $att->fail('Expected exception in '.where_called(1));
+		return $att->fail('Expected exception in '.$att->where_called(1));
 	}
 }
 
@@ -166,7 +166,7 @@ function assert_not_throws( $func ){
 	}
 
 	if($threw === true){
-		return $att->fail('Unexpected exception in '.where_called(1));
+		return $att->fail('Unexpected exception in '.$att->where_called(1));
 	} else {
 		return true;
 	}
