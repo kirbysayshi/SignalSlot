@@ -39,11 +39,11 @@ class Aristotle {
 
 	}
 
-	private function msg($msg){
+	public function msg($msg){
 		echo $msg."\n";
 	}
 
-	private function info($msg){
+	public function info($msg){
 		echo "\t".$msg."\n";
 	}
 
@@ -145,6 +145,10 @@ function assert_throws( $func ){
 	try{
 		$func();
 	} catch(Exception $e){
+		if(DEBUG) {
+			$att->msg("\nDEBUG enabled, dumping caught exception");
+			$att->msg($e);
+		}
 		$threw = true;
 	}
 
@@ -162,6 +166,10 @@ function assert_not_throws( $func ){
 	try{
 		$func();
 	} catch(Exception $e){
+		if(DEBUG) {
+			$att->msg("\nDEBUG enabled, dumping caught exception");
+			$att->msg($e);
+		}
 		$threw = true;
 	}
 
